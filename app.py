@@ -4,98 +4,68 @@ import io
 import os
 import requests
 from PIL import Image
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# ================= CONFIG ================= #
-GOOGLE_DRIVE_FOLDER_ID = ["1d3hEvbix4blsM7An5Iztf0J2Eljok3AI","1iY-gPKT_diWgK7OP45Hg2SJzXcYrMLgV","1F7ooIYCJA1r0bhZm9XYNncA0iX5itmjr","1C0EBb08PKRs_4iSNEa_cmpJBkA7DNf-V"]
+# ===================== CONFIG ===================== #
 FACE_PKL_PATH = "face_directory.pkl"
+DRIVE_INDEX_PATH = "drive_index.pkl"
 LOOKUP_IMAGE_PATH = "faceLookup.jpg"
 
-PREVIEW_SIZE = (320, 320)
-IMAGES_PER_PAGE = 24
-MAX_WORKERS = 6
+PREVIEW_SIZE = (320, 320)   # display preview only
+IMAGES_PER_PAGE = 12        # hard cap for stability
+MAX_WORKERS = 2             # critical for multi-user safety
 CACHE_DIR = ".preview_cache"
-
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-# ========================================= #
+# ================================================= #
 
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 st.set_page_config(
-    page_title="Face Sorted Viewer",
+    page_title="Face Sorted Image Viewer",
     layout="wide"
 )
 
 st.title("📸 Face-Sorted Image Viewer")
 
-# ================= GOOGLE DRIVE ================= #
+# ===================== LOAD METADATA ===================== #
 @st.cache_resource
-def get_drive_service():
-    creds = service_account.Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
-        scopes=SCOPES
-    )
-    return build("drive", "v3", credentials=creds)
+def load_drive_index():
+    with open(DRIVE_INDEX_PATH, "rb") as f:
+        return pickle.load(f)
 
-drive_service = get_drive_service()
-
-# ================= LOAD FACE DIRECTORY ================= #
-@st.cache_data
+@st.cache_resource
 def load_face_directory():
     with open(FACE_PKL_PATH, "rb") as f:
         return pickle.load(f)
 
+filename_to_id = load_drive_index()
 face_directory = load_face_directory()
 
-# ================= FILE NAME → FILE ID MAP ================= #
-@st.cache_data(show_spinner=True)
-def build_filename_to_id():
-    mapping = {}
-    page_token = None
-    for IDS in GOOGLE_DRIVE_FOLDER_ID:
-            
-        while True:
-            response = drive_service.files().list(
-                q=f"'{IDS}' in parents and trashed=false",
-                fields="nextPageToken, files(id, name)",
-                pageToken=page_token
-            ).execute()
-
-            for file in response.get("files", []):
-                mapping[file["name"]] = file["id"]
-
-            page_token = response.get("nextPageToken")
-            if not page_token:
-                break
-
-    return mapping
-
-filename_to_id = build_filename_to_id()
-
-# ================= PREVIEW IMAGE LOADER ================= #
+# ===================== PREVIEW LOADER ===================== #
 def load_preview(file_id):
+    """
+    Disk-only cache, no Streamlit cache.
+    Safe for multi-user usage.
+    """
     cache_path = os.path.join(CACHE_DIR, f"{file_id}.png")
 
     if os.path.exists(cache_path):
         return Image.open(cache_path)
 
     url = f"https://drive.google.com/uc?id={file_id}"
-    r = requests.get(url, timeout=10)
+    r = requests.get(url, timeout=8)
     r.raise_for_status()
 
     img = Image.open(io.BytesIO(r.content)).convert("RGB")
-    img.thumbnail(PREVIEW_SIZE)  # preview ONLY
+    img.thumbnail(PREVIEW_SIZE)  # preview only
     img.save(cache_path, format="PNG")
 
     return Image.open(cache_path)
 
-# ================= SIDEBAR ================= #
+# ===================== SIDEBAR ===================== #
 st.sidebar.header("Navigation")
 
 people = sorted(face_directory.keys())
-default_person = max(face_directory, key=lambda k: len(face_directory[k]))
+default_person = max(people, key=lambda k: len(face_directory[k]))
 
 selected_person = st.sidebar.selectbox(
     "Select Person",
@@ -113,7 +83,7 @@ if show_lookup:
             caption="Zoom in to identify your person number"
         )
 
-# ================= PAGINATION ================= #
+# ===================== PAGINATION ===================== #
 image_names = face_directory[selected_person]
 total_images = len(image_names)
 total_pages = (total_images - 1) // IMAGES_PER_PAGE + 1
@@ -133,19 +103,21 @@ start = (page - 1) * IMAGES_PER_PAGE
 end = start + IMAGES_PER_PAGE
 visible_images = image_names[start:end]
 
-# ================= GRID DISPLAY ================= #
+# ===================== GRID DISPLAY ===================== #
 def fetch_preview(name):
     file_id = filename_to_id.get(name)
     if not file_id:
-        return name, None
+        return name, None, None
+
     try:
-        return name, load_preview(file_id)
+        img = load_preview(file_id)
+        return name, img, file_id
     except Exception:
-        return name, None
+        return name, None, file_id
 
 cols = st.columns(3)
 
-with st.spinner("Loading previews..."):
+with st.spinner("Loading images..."):
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = [
             executor.submit(fetch_preview, name)
@@ -153,8 +125,7 @@ with st.spinner("Loading previews..."):
         ]
 
         for idx, future in enumerate(as_completed(futures)):
-            name, img = future.result()
-            file_id = filename_to_id.get(name)
+            name, img, file_id = future.result()
 
             with cols[idx % 3]:
                 if img:
@@ -162,12 +133,12 @@ with st.spinner("Loading previews..."):
                     img.close()
 
                     if file_id:
-                        original_url = (
+                        drive_url = (
                             f"https://drive.google.com/file/d/{file_id}/view"
                         )
                         st.markdown(
-                            f"[↗️ Open in Drive]({original_url})",
+                            f"[↗️ Open in Drive]({drive_url})",
                             unsafe_allow_html=True
                         )
                 else:
-                    st.error("Failed to load")
+                    st.error("Preview unavailable")
