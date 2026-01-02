@@ -1,24 +1,36 @@
 import streamlit as st
 import pickle
 import io
+import os
 import requests
 from PIL import Image
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# ---------------- CONFIG ---------------- #
+# ================= CONFIG ================= #
 GOOGLE_DRIVE_FOLDER_ID = ["1d3hEvbix4blsM7An5Iztf0J2Eljok3AI","1iY-gPKT_diWgK7OP45Hg2SJzXcYrMLgV","1F7ooIYCJA1r0bhZm9XYNncA0iX5itmjr","1C0EBb08PKRs_4iSNEa_cmpJBkA7DNf-V"]
 FACE_PKL_PATH = "face_directory.pkl"
 LOOKUP_IMAGE_PATH = "faceLookup.jpg"
-# THUMBNAIL_SIZE = (240, 240)
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-IMAGES_PER_PAGE = 16   # 🔴 CRITICAL FOR MEMORY
-# ---------------------------------------- #
 
-st.set_page_config(page_title="Face Sort Viewer", layout="wide")
+PREVIEW_SIZE = (320, 320)
+IMAGES_PER_PAGE = 24
+MAX_WORKERS = 6
+CACHE_DIR = ".preview_cache"
+
+SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+# ========================================= #
+
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+st.set_page_config(
+    page_title="Face Sorted Viewer",
+    layout="wide"
+)
+
 st.title("📸 Face-Sorted Image Viewer")
 
-# ---------- GOOGLE DRIVE AUTH ---------- #
+# ================= GOOGLE DRIVE ================= #
 @st.cache_resource
 def get_drive_service():
     creds = service_account.Credentials.from_service_account_info(
@@ -29,7 +41,7 @@ def get_drive_service():
 
 drive_service = get_drive_service()
 
-# ---------- LOAD FACE DIRECTORY ---------- #
+# ================= LOAD FACE DIRECTORY ================= #
 @st.cache_data
 def load_face_directory():
     with open(FACE_PKL_PATH, "rb") as f:
@@ -37,12 +49,11 @@ def load_face_directory():
 
 face_directory = load_face_directory()
 
-# ---------- BUILD filename → fileId MAP ---------- #
+# ================= FILE NAME → FILE ID MAP ================= #
 @st.cache_data(show_spinner=True)
-def build_filename_id_map():
+def build_filename_to_id():
     mapping = {}
     page_token = None
-
     for IDS in GOOGLE_DRIVE_FOLDER_ID:
             
         while True:
@@ -61,58 +72,54 @@ def build_filename_id_map():
 
     return mapping
 
-filename_to_id = build_filename_id_map()
+filename_to_id = build_filename_to_id()
 
-# ---------- LOAD IMAGE (THUMBNAIL ONLY) ---------- #
-@st.cache_data(show_spinner=False, max_entries=100)
-def load_image_thumbnail(file_id):
+# ================= PREVIEW IMAGE LOADER ================= #
+def load_preview(file_id):
+    cache_path = os.path.join(CACHE_DIR, f"{file_id}.png")
+
+    if os.path.exists(cache_path):
+        return Image.open(cache_path)
+
     url = f"https://drive.google.com/uc?id={file_id}"
     r = requests.get(url, timeout=10)
     r.raise_for_status()
 
-    img = Image.open(io.BytesIO(r.content))
-    # img.draft("RGB", THUMBNAIL_SIZE)   # 🔴 avoids full decode
-    # img.thumbnail(THUMBNAIL_SIZE)
-    return img.convert("RGB")
+    img = Image.open(io.BytesIO(r.content)).convert("RGB")
+    img.thumbnail(PREVIEW_SIZE)  # preview ONLY
+    img.save(cache_path, format="PNG")
 
-# ---------- SIDEBAR (ONLY 2 ELEMENTS) ---------- #
+    return Image.open(cache_path)
+
+# ================= SIDEBAR ================= #
 st.sidebar.header("Navigation")
 
-
 people = sorted(face_directory.keys())
-DEFAULT_PERSON = "Nimra" 
-
-default_index = (
-    people.index(DEFAULT_PERSON)
-    if DEFAULT_PERSON in people
-    else 0
-)
+default_person = max(face_directory, key=lambda k: len(face_directory[k]))
 
 selected_person = st.sidebar.selectbox(
     "Select Person",
     people,
-    index=default_index
+    index=people.index(default_person)
 )
 
 show_lookup = st.sidebar.button("Who am I? (Face Lookup)")
-st.sidebar.info("To Zoom in, Right-click → Open image in new tab or Ctrl+Scroll (on desktop) / Pinch zoom (on mobile)")
 
-# ---------- LOOKUP IMAGE (ZOOMABLE) ---------- #
 if show_lookup:
-    with st.expander("🔍 Face Lookup Guide (Click to Expand)", expanded=True):
+    with st.expander("🔍 Face Lookup Guide", expanded=True):
         st.image(
             LOOKUP_IMAGE_PATH,
-            caption="Zoom in to match your face and find your person number",
-            width='stretch'
+            width='stretch',
+            caption="Zoom in to identify your person number"
         )
 
-# ---------- PAGINATION LOGIC ---------- #
+# ================= PAGINATION ================= #
 image_names = face_directory[selected_person]
 total_images = len(image_names)
 total_pages = (total_images - 1) // IMAGES_PER_PAGE + 1
 
 st.subheader(f"👤 {selected_person}")
-st.caption(f"Images: {total_images} • Pages: {total_pages}")
+st.caption(f"{total_images} images • {total_pages} pages")
 
 page = st.number_input(
     "Page",
@@ -126,25 +133,41 @@ start = (page - 1) * IMAGES_PER_PAGE
 end = start + IMAGES_PER_PAGE
 visible_images = image_names[start:end]
 
-st.caption(
-    "Images are loaded in pages to reduce memory usage. "
-    "Use the page selector to browse."
-)
+# ================= GRID DISPLAY ================= #
+def fetch_preview(name):
+    file_id = filename_to_id.get(name)
+    if not file_id:
+        return name, None
+    try:
+        return name, load_preview(file_id)
+    except Exception:
+        return name, None
 
-# ---------- IMAGE GRID ---------- #
-cols = st.columns(4)
+cols = st.columns(3)
 
-for idx, image_name in enumerate(visible_images):
-    with cols[idx % 4]:
-        file_id = filename_to_id.get(image_name)
+with st.spinner("Loading previews..."):
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = [
+            executor.submit(fetch_preview, name)
+            for name in visible_images
+        ]
 
-        if not file_id:
-            st.warning("Missing file")
-            continue
+        for idx, future in enumerate(as_completed(futures)):
+            name, img = future.result()
+            file_id = filename_to_id.get(name)
 
-        try:
-            img = load_image_thumbnail(file_id)
-            st.image(img, caption=image_name,width='stretch')
-            img.close()  # 🔴 IMPORTANT: free memory
-        except Exception:
-            st.error("Failed to load image")
+            with cols[idx % 3]:
+                if img:
+                    st.image(img, width='stretch')
+                    img.close()
+
+                    if file_id:
+                        original_url = (
+                            f"https://drive.google.com/file/d/{file_id}/view"
+                        )
+                        st.markdown(
+                            f"[↗️ Open in Drive]({original_url})",
+                            unsafe_allow_html=True
+                        )
+                else:
+                    st.error("Failed to load")
