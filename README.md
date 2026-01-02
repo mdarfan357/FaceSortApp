@@ -33,4 +33,43 @@ manual labeling or predefined identities.
 ---
 
 ## 📂 Output Structure (Logical)
+person_1 → [img1, img2, img3, ...]
+person_2 → [img4, img7, ...]
+no_person → [...]
 
+The app consumes this structure from a serialized file:
+`face_directory.pkl`.
+
+---
+
+## 🧠 Key Design Choices
+
+- **No manual labeling**
+- **No predefined number of people**
+- **Google Drive as image storage**
+- **Streamlit for fast deployment**
+- **Service account authentication (secure & scalable)**
+
+---
+
+🧪 Performance Notes
+
+Google Drive folder is scanned once and cached
+
+Images are loaded on-demand
+
+Thumbnails reduce memory usage
+
+Suitable for thousands of images
+
+💡 Practical Use Cases
+
+Wedding & event photo organization
+
+Media asset management
+
+Dataset inspection for ML
+
+Identity-based indexing
+
+Visual data auditing
