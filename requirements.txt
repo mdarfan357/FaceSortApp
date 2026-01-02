@@ -1,0 +1,5 @@
+streamlit>=1.30
+google-api-python-client>=2.100
+google-auth>=2.20
+Pillow>=9.5
+requests>=2.31
