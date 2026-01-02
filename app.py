@@ -12,7 +12,7 @@ FACE_PKL_PATH = "face_directory.pkl"
 LOOKUP_IMAGE_PATH = "faceLookup.jpg"
 # THUMBNAIL_SIZE = (240, 240)
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-IMAGES_PER_PAGE = 24   # 🔴 CRITICAL FOR MEMORY
+IMAGES_PER_PAGE = 16   # 🔴 CRITICAL FOR MEMORY
 # ---------------------------------------- #
 
 st.set_page_config(page_title="Face Sort Viewer", layout="wide")
