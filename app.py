@@ -12,7 +12,7 @@ DRIVE_INDEX_PATH = "drive_index.pkl"
 LOOKUP_IMAGE_PATH = "faceLookup.jpg"
 
 PREVIEW_SIZE = (320, 320)   # display preview only
-IMAGES_PER_PAGE = 12        # hard cap for stability
+IMAGES_PER_PAGE = 24      # hard cap for stability
 MAX_WORKERS = 2             # critical for multi-user safety
 CACHE_DIR = ".preview_cache"
 # ================================================= #
