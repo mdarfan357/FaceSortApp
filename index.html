@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Face Gallery</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <header>
+    <h1>Face Gallery</h1>
+    <p>Grouped images by identity</p>
+
+    <!-- Search with suggestions -->
+    <input
+      type="text"
+      id="searchBox"
+      list="personList"
+      value="Nimra"
+      placeholder="Search person name..."
+    />
+    <datalist id="personList"></datalist>
+
+    <button id="toggleLookup">Show face reference</button>
+  </header>
+
+  <section id="lookupSection" class="lookup hidden">
+    <img src="faceLookup.jpg" alt="Face lookup reference" />
+  </section>
+
+  <main id="gallery"></main>
+
+  <div class="load-more-container">
+    <button id="loadMoreBtn">Load more</button>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
