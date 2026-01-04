@@ -5,7 +5,7 @@ const lookupSection = document.getElementById("lookupSection");
 const loadMoreBtn = document.getElementById("loadMoreBtn");
 const personList = document.getElementById("personList");
 
-const IMAGES_PER_BATCH = 30;
+const IMAGES_PER_BATCH = 35;
 
 let faceDirectory = {};
 let driveIndex = {};
@@ -120,3 +120,4 @@ function missingEntry(filename) {
   div.textContent = `Missing Drive ID for ${filename}`;
   return div;
 }
+
