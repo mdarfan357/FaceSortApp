@@ -142,3 +142,7 @@ with st.spinner("Loading images..."):
                         )
                 else:
                     st.error("Preview unavailable")
+                    st.markdown(
+                    f"[↗️ Open in Drive]({drive_url})",
+                    unsafe_allow_html=True
+                    )
