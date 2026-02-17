@@ -73,3 +73,6 @@ Dataset inspection for ML
 Identity-based indexing
 
 Visual data auditing
+
+<img width="1919" height="905" alt="image" src="https://github.com/user-attachments/assets/e17223ec-74b4-42ca-a245-f63c43fab57f" />
+
