@@ -56,51 +56,66 @@ function render() {
   gallery.innerHTML = "";
 
   const filter = searchBox.value.toLowerCase();
-  let rendered = 0;
+
+  // Flatten structure
+  const allImages = [];
 
   Object.entries(faceDirectory).forEach(([person, images]) => {
     if (!person.toLowerCase().includes(filter)) return;
 
     images.forEach(filename => {
-      // 🚫 Skip face preview images
       if (filename.toLowerCase() === "face_preview.jpg") return;
 
-      if (rendered >= visibleCount) return;
-
-      const fileId = driveIndex[filename];
-      const card = document.createElement("div");
-      card.className = "card";
-
-      if (!fileId) {
-        card.appendChild(missingEntry(filename));
-        gallery.appendChild(card);
-        rendered++;
-        return;
-      }
-
-      const img = document.createElement("img");
-      img.loading = "lazy";
-      img.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`;
-
-      img.onerror = () => {
-        img.replaceWith(fallbackLink(fileId, filename));
-      };
-
-      const link = document.createElement("a");
-      link.href = `https://drive.google.com/file/d/${fileId}/view`;
-      link.target = "_blank";
-      link.textContent = "↗ Open full-resolution image in Google Drive";
-
-      card.appendChild(img);
-      card.appendChild(link);
-      gallery.appendChild(card);
-      rendered++;
+      allImages.push({
+        person,
+        filename
+      });
     });
   });
 
-  loadMoreBtn.style.display = rendered >= visibleCount ? "block" : "none";
-}
+  const visibleImages = allImages.slice(0, visibleCount);
 
+  visibleImages.forEach(entry => {
+    const { person, filename } = entry;
+
+    const fileId = driveIndex[filename];
+    const card = document.createElement("div");
+    card.className = "card";
+
+    if (!fileId) {
+      card.appendChild(missingEntry(filename));
+      gallery.appendChild(card);
+      return;
+    }
+
+    const img = document.createElement("img");
+    img.loading = "lazy";
+    img.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`;
+
+    img.onerror = () => {
+      img.replaceWith(fallbackLink(fileId, filename));
+    };
+
+    const link = document.createElement("a");
+    link.href = `https://drive.google.com/file/d/${fileId}/view`;
+    link.target = "_blank";
+    link.textContent = "↗ Open full-resolution image in Google Drive";
+
+    const label = document.createElement("div");
+    label.textContent = person;
+    label.style.fontWeight = "bold";
+    label.style.padding = "4px";
+
+    card.appendChild(label);
+    card.appendChild(img);
+    card.appendChild(link);
+
+    gallery.appendChild(card);
+  });
+
+  loadMoreBtn.style.display =
+    visibleImages.length < allImages.length ? "block" : "none";
+}
 // ---------- Helpers ----------
 
 function fallbackLink(fileId, filename) {
@@ -120,4 +135,5 @@ function missingEntry(filename) {
   div.textContent = `Missing Drive ID for ${filename}`;
   return div;
 }
+
 
